@@ -1,0 +1,231 @@
+####
+# Flatpak Configuration for building DaVinci Resolve
+#
+####
+app-id: com.blackmagic.Resolve
+runtime: org.kde.Platform
+runtime-version: &runtime-version '5.15-24.08'
+sdk: org.kde.Sdk
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=pulseaudio
+  - --socket=x11
+  - --socket=wayland
+  - --socket=session-bus
+  - --device=dri
+  - --device=all
+  - --filesystem=xdg-documents
+  - --filesystem=xdg-cache
+  - --filesystem=xdg-data
+  - --filesystem=xdg-videos
+  - --filesystem=~/.local/share/DaVinciResolve
+  - --filesystem=~/Desktop
+#  - --filesystem=home
+  - --filesystem=xdg-config
+#  - --filesystem=host
+  - --env=LD_PRELOAD=/lib/x86_64-linux-gnu/libglib-2.0.so.0:/lib/x86_64-linux-gnu/libgio-2.0.so.0:/lib/x86_64-linux-gnu/libgmodule-2.0.so.0:/lib/x86_64-linux-gnu/libgobject-2.0.so.0
+
+  - --filesystem=/run/host/fonts:ro
+  - --filesystem=xdg-data/fonts:ro
+
+  - --filesystem=xdg-run/fcitx:ro
+  - --talk-name=org.fcitx.Fcitx5
+  - --talk-name=org.freedesktop.portal.Fcitx
+
+  - --env=QT_IM_MODULE=fcitx
+  - --env=XMODIFIERS=@im=fcitx
+  - --env=GTK_IM_MODULE=fcitx
+  - --env=QT_PLUGIN_PATH=/app/lib/plugins:/app/libs/plugins
+#  - --env=BMD_RESOLVE_CONFIG_DIR=${XDG_CONFIG_HOME}
+#  - --env=BMD_RESOLVE_LICENSE_DIR=${XDG_DATA_HOME}/license
+#  - --env=BMD_RESOLVE_LOGS_DIR=${XDG_DATA_HOME}/logs
+  - --env=LOG4CXX_CONFIGURATION=/app/etc/log4cxx.properties
+  - --env=LD_LIBRARY_PATH=/app/libs
+
+command: /app/bin/resolve
+modules:
+  - shared-modules/glu/glu-9.json
+  #Ship libcrypt.so.1 with flatpak as not provided by runtime or by Blackmagic. See https://gitlab.com/freedesktop-sdk/freedesktop-sdk/-/issues/1708
+  - name: libxcrypt
+    buildsystem: autotools
+    config-opts: ["--enable-obsolete-api=glibc"]
+    sources:
+      - type: git
+        url: https://github.com/besser82/libxcrypt.git
+        tag: v4.4.38
+
+  # Extra CMake Modules (fcitx5に必要)
+  - name: extra-cmake-modules
+    buildsystem: cmake-ninja
+    sources:
+      - type: archive
+        url: https://download.kde.org/stable/frameworks/5.115/extra-cmake-modules-5.115.0.tar.xz
+        sha256: ee3e35f6a257526b8995a086dd190528a8ef4b3854b1e457b8122701b0ce45ee
+
+  # libuv (fcitx5に必要)
+  - name: libuv
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_TESTING=OFF
+    sources:
+      - type: archive
+        url: https://github.com/libuv/libuv/archive/v1.48.0.tar.gz
+        sha256: 8c253adb0f800926a6cbd1c6576abae0bc8eb86a4f891049b72f9e5b7dc58f33
+
+  # json-c (fcitx5に必要)
+  - name: json-c
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DBUILD_TESTING=OFF
+    sources:
+      - type: archive
+        url: https://github.com/json-c/json-c/archive/json-c-0.17-20230812.tar.gz
+        sha256: 024d302a3aadcbf9f78735320a6d5aedf8b77876c8ac8bbb95081ca55054c7eb
+
+  # fmt (fcitx5に必要)
+  - name: fmt
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DFMT_TEST=OFF
+      - -DFMT_DOC=OFF
+    sources:
+      - type: archive
+        url: https://github.com/fmtlib/fmt/archive/12.1.0/fmt-12.1.0.tar.gz
+        sha256: ea7de4299689e12b6dddd392f9896f08fb0777ac7168897a244a6d6085043fea
+
+  # fcitx5 (日本語入力メソッド)
+  - name: fcitx5
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_INSTALL_PREFIX=/app
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DENABLE_TEST=OFF
+      - -DENABLE_COVERAGE=OFF
+      - -DENABLE_ENCHANT=OFF
+      - -DENABLE_SERVER=OFF
+      - -DENABLE_EMOJI=OFF
+      - -DENABLE_KEYBOARD=ON
+      - -DENABLE_X11=OFF
+      - -DENABLE_WAYLAND=ON
+      - -DUSE_SYSTEMD=OFF
+    sources:
+      - type: archive
+        url: https://download.fcitx-im.org/fcitx5/fcitx5/fcitx5-5.1.16.tar.zst
+        sha256: b3444d9a484c845a2bf9234b0658ae128fafb5e212fcc8593b26caca317dda22
+      - type: file
+        url: https://download.fcitx-im.org/data/en_dict-20121020.tar.gz
+        sha256: c44a5d7847925eea9e4d2d04748d442cd28dd9299a0b572ef7d91eac4f5a6ceb
+        dest-filename: en_dict-20121020.tar.gz
+      - type: shell
+        commands:
+          - |
+            cat > src/modules/spell/CMakeLists.txt.patch << 'EOFPATCH'
+            --- src/modules/spell/CMakeLists.txt
+            +++ src/modules/spell/CMakeLists.txt
+            @@ -35,10 +35,24 @@
+             set(SPELL_EN_DICT_URL
+               "https://download.fcitx-im.org/data/en_dict-${SPELL_EN_DICT_VER}.tar.gz")
+
+            -fcitx5_download(spell-en-download ${SPELL_EN_DICT_URL} ${SPELL_EN_DICT_TAR}
+            -                c44a5d7847925eea9e4d2d04748d442cd28dd9299a0b572ef7d91eac4f5a6ceb)
+            -fcitx5_extract(spell-en-extract "${SPELL_EN_DICT_TAR}" DEPENDS spell-en-download
+            -  OUTPUT ${SPELL_EN_DICT_SRC})
+            +
+            +set(PREDOWNLOADED_DICT "${CMAKE_SOURCE_DIR}/en_dict-${SPELL_EN_DICT_VER}.tar.gz")
+            +add_custom_command(
+            +  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${SPELL_EN_DICT_TAR}"
+            +  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${PREDOWNLOADED_DICT}" "${CMAKE_CURRENT_BINARY_DIR}/${SPELL_EN_DICT_TAR}"
+            +  DEPENDS "${PREDOWNLOADED_DICT}"
+            +  COMMENT "Copying pre-downloaded dictionary"
+            +)
+            +add_custom_target(spell-en-download DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/${SPELL_EN_DICT_TAR}")
+            +
+            +add_custom_command(
+            +  OUTPUT ${SPELL_EN_DICT_SRC}
+            +  COMMAND ${CMAKE_COMMAND} -E tar xzf "${CMAKE_CURRENT_BINARY_DIR}/${SPELL_EN_DICT_TAR}"
+            +  DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/${SPELL_EN_DICT_TAR}"
+            +  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+            +  COMMENT "Extracting dictionary"
+            +)
+            +add_custom_target(spell-en-extract DEPENDS ${SPELL_EN_DICT_SRC})
+
+             add_custom_command(
+               OUTPUT "${SPELL_EN_DICT}"
+            EOFPATCH
+          - patch -p0 < src/modules/spell/CMakeLists.txt.patch
+
+  # fcitx5-qt (Qt5統合)
+  - name: fcitx5-qt
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_INSTALL_PREFIX=/app
+      - -DCMAKE_BUILD_TYPE=Release
+      - -DENABLE_QT4=OFF
+      - -DENABLE_QT5=ON
+      - -DENABLE_QT6=OFF
+      - -DCMAKE_INSTALL_QT5PLUGINDIR=/app/lib/plugins
+    sources:
+      - type: archive
+        url: https://download.fcitx-im.org/fcitx5/fcitx5-qt/fcitx5-qt-5.1.5.tar.xz
+        sha256: f663f12f0c3806684f43dcc64decc4f81c853e9027e2203188e20d7507b39c31
+
+
+  - name: resolve
+    buildsystem: simple
+    build-options:
+      build-args:
+        - --share=network
+    build-commands:
+      - install -Dm644 logo.png /app/share/icons/hicolor/scalable/apps/com.blackmagic.Resolve.png
+      - |
+        ./run_complete_installation.sh
+      - mkdir -p /app/Apple\ Immersive/Calibration
+      - mkdir -p /app/configs
+      - chmod -R 777 /app/Apple\ Immersive
+      - install -Dm644 log4cxx.properties /app/etc/log4cxx.properties
+    sources:
+      - type: file
+        path: python/build_metainfo.py
+      - type: file
+        path: python/main.py
+      - type: file
+        path: python/resolve_download.py
+      - type: file
+        path: python/version.py
+      - type: file
+        path: shell/setup_resolve.sh
+      - type: file
+        path: shell/setup_directories.sh
+      - type: file
+        path: shell/resolve.sh
+      - type: file
+        path: run_complete_installation.sh
+      - type: file
+        path: requirements.txt
+      - type: file
+        path: logo.png
+      - type: file
+        path: log4cxx.properties
+#  - name: resolve-config
+#    buildsystem: simple
+#    build-commands:
+#      - |
+#        cat > resolve-launcher.sh << 'EOFSH'
+#        #!/bin/bash
+#        export BMD_RESOLVE_CONFIG_DIR="${XDG_CONFIG_HOME}"
+#        export BMD_RESOLVE_LICENSE_DIR="${XDG_DATA_HOME}/license"
+#        export BMD_RESOLVE_LOGS_DIR="${XDG_DATA_HOME}/logs"
+#        export LOG4CXX_CONFIGURATION="/app/etc/log4cxx.properties"
+#        export LD_LIBRARY_PATH="/app/libs:${LD_LIBRARY_PATH}"
+#        export QT_PLUGIN_PATH="/app/lib/plugins:/app/libs/plugins:${QT_PLUGIN_PATH}"
+#        export QT_IM_MODULE=fcitx
+#        export XMODIFIERS=@im=fcitx
+#        export GTK_IM_MODULE=fcitx
+#
+#        exec /app/bin/resolve "$@"
+#        EOFSH
+#      - install -Dm755 resolve-launcher.sh /app/bin/resolve.sh
+
